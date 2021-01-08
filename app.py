@@ -51,6 +51,23 @@ def getPostalCoords(postal_code):
     # Function that takes a UK postal code as a string and returns coords as a df
     return pgeocode.Nominatim('gb').query_postal_code(postal_code)[['latitude','longitude']]
 
+crime_color_map = {
+    "Anti-social behaviour": "#DC050C",
+    "Bicycle theft": "#E8601C",
+    "Burglary": "#F1932D",
+    "Criminal damage and arson": "#F6C141",
+    "Drugs": "#F7F056",
+    "Other crime": "#CAE0AB",
+    "Other theft": "#90C987",
+    "Possession of weapons": "#4EB265",
+    "Public order": "#7BAFDE",
+    "Robbery": "#5289C7",
+    "Shoplifting": "#1965B0",
+    "Theft from the person": "#882E72",
+    "Vehicle crime": "#AE76A3",
+    "Violence and sexual offences": "#D1BBD7",
+}
+
 
 app.layout = html.Div([
     html.Div([
@@ -67,11 +84,11 @@ app.layout = html.Div([
             html.Div([
                 html.P('Visualisation type:',
                        id='visualisation-type-text'),
-                dcc.RadioItems(
+                dcc.RadioItems( # Change this into a cool button that changes color!
                     id='visualisation-type-radio-items',
                     options=[
-                        {'label': 'Aggregate', 'value': 'agg'},
-                        {'label': 'Individual', 'value': 'ind'}
+                        {'label': 'Aggregate Crimes', 'value': 'agg'},
+                        {'label': 'Individual Crimes', 'value': 'ind'}
                     ],
                     value='agg',
                 )
@@ -81,7 +98,7 @@ app.layout = html.Div([
             ),
 
             html.Div([
-                html.P('Enter a UK postal code (optional, speeds up loading):',
+                html.P('Enter a UK postal code (optional):',
                        id='postal-text'),
                 dcc.Input(
                     id='postal-input',
@@ -130,7 +147,7 @@ app.layout = html.Div([
                 ),
                 dcc.Checklist(
                     id='select-all',
-                    options=[{'label': 'Select All', 'value': 1}],
+                    options=[{'label': 'Select All', 'value': 'On'}],
                     value=[]
                 ),
                 dcc.Dropdown(
@@ -138,11 +155,14 @@ app.layout = html.Div([
                     options=[
                         {'label': c, 'value': c} for c in df_street['Crime type'].unique()
                     ],
-                    value=['Violence and sexual offences', 'Theft from the person',
-                           'Anti-social behaviour'],
+                    value=['Theft from the person'],
                     multi=True
+                ),
+                dcc.Checklist(
+                    id='highlight',
+                    options=[{'label': 'Brighten Individual Crimes', 'value': 'On'}],
+                    value=[]
                 )
-
             ],
             style={},
             id='other-options-container'
@@ -198,16 +218,34 @@ app.layout = html.Div([
 ])
 
 @app.callback(
+    Output('crime-dropdown', 'value'),
+    Input('select-all', 'value'),
+    State('crime-dropdown', 'value')
+)
+def checkSelected(selected, current_values):
+    if selected:
+        return [c for c in df_street['Crime type'].unique()]
+    else:
+        return current_values
+
+@app.callback(
     Output('scatter-map', 'figure'),
     Input('postal-enter-button', 'n_clicks'),
     Input('year-slider', 'value'),
     Input('month-slider', 'value'),
     Input('crime-dropdown', 'value'),
-    State('postal-input','value')
+    Input('highlight', 'value'),
+    State('postal-input','value'),
+
 )
-def update_map(n_clicks, year, month, crime_types, postal):
+def updateMap(n_clicks, year, month, crime_types, highlight, postal):
     dff = df_street[(df_street['Year']==year) & (df_street['Month']==month)
     & (df_street['Crime type'].isin(crime_types))]
+
+    if highlight:
+        alpha = 1
+    else:
+        alpha = 0.3
 
     if postal:
         coords = getPostalCoords(postal)
@@ -215,10 +253,11 @@ def update_map(n_clicks, year, month, crime_types, postal):
         fig = px.scatter_mapbox(dff,
                                 lat="Latitude",
                                 lon="Longitude",
-                                opacity=0.5,
+                                opacity=alpha,
                                 center=center,
                                 color="Crime type",
                                 zoom=14,
+                                color_discrete_map=crime_color_map
                                 )
         fig.update_layout(mapbox_style='dark',
                           mapbox_accesstoken=token,
@@ -230,7 +269,7 @@ def update_map(n_clicks, year, month, crime_types, postal):
                                   'title_font_color': 'white'
                                   })
 
-        fig.update_traces(hoverinfo='skip', hovertemplate=None)
+        fig.update_traces(hoverinfo='skip', hovertemplate=None, marker_size=10)
         return fig
 
     else:
@@ -239,9 +278,10 @@ def update_map(n_clicks, year, month, crime_types, postal):
                                 lat="Latitude",
                                 lon="Longitude",
                                 center=center,
-                                opacity=0.5,
+                                opacity=alpha,
                                 color="Crime type",
-                                zoom=11
+                                zoom=11,
+                                color_discrete_map=crime_color_map
                                 )
         fig.update_layout(mapbox_style='dark',
                           mapbox_accesstoken=token,
@@ -252,7 +292,7 @@ def update_map(n_clicks, year, month, crime_types, postal):
                                   'font_color': 'white',
                                   'title_font_color': 'white'
                                   })
-        fig.update_traces(hoverinfo='skip', hovertemplate=None)
+        fig.update_traces(hoverinfo='skip', hovertemplate=None, marker_size=10)
         return fig
 
 
