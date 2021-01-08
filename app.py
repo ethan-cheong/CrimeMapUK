@@ -4,6 +4,8 @@ import dash_html_components as html
 from dash.dependencies import Input, Output, State
 import plotly.express as px
 import pandas as pd
+import pgeocode
+from ukpostcodeutils import validation
 
 #Plan:
 
@@ -44,6 +46,11 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 chart_options = ['chart a', 'chart b']
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+
+def getPostalCoords(postal_code):
+    # Function that takes a UK postal code as a string and returns coords as a df
+    return pgeocode.Nominatim('gb').query_postal_code(postal_code)[['latitude','longitude']]
+
 
 app.layout = html.Div([
     html.Div([
@@ -131,7 +138,8 @@ app.layout = html.Div([
                     options=[
                         {'label': c, 'value': c} for c in df_street['Crime type'].unique()
                     ],
-                    value=['Violence and sexual offences'],
+                    value=['Violence and sexual offences', 'Theft from the person',
+                           'Anti-social behaviour'],
                     multi=True
                 )
 
@@ -179,8 +187,8 @@ app.layout = html.Div([
     html.Div([
         dcc.Graph(
             id='scatter-map',
-            style={'height': '100%'}
-        )
+            style={'height': 800}
+        ),
     ],
     style={'width': '48%', 'display': 'inline-block', 'float': 'right',
            'height': '100%'},
@@ -191,25 +199,63 @@ app.layout = html.Div([
 
 @app.callback(
     Output('scatter-map', 'figure'),
+    Input('postal-enter-button', 'n_clicks'),
     Input('year-slider', 'value'),
     Input('month-slider', 'value'),
-    Input('crime-dropdown', 'value')
+    Input('crime-dropdown', 'value'),
+    State('postal-input','value')
 )
-def update_map(year, month, crime_types):
+def update_map(n_clicks, year, month, crime_types, postal):
     dff = df_street[(df_street['Year']==year) & (df_street['Month']==month)
     & (df_street['Crime type'].isin(crime_types))]
 
-    fig = px.scatter_mapbox(dff,
-                            lat="Latitude",
-                            lon="Longitude",
-                            hover_name="Crime type",
-                            hover_data=["Location"],
-                            color="Crime type",
-                            zoom=5,
-                            )
-    fig.update_layout(mapbox_style="dark", mapbox_accesstoken=token)
+    if postal:
+        coords = getPostalCoords(postal)
+        center = dict(lat = coords['latitude'].item(), lon = coords['longitude'].item())
+        fig = px.scatter_mapbox(dff,
+                                lat="Latitude",
+                                lon="Longitude",
+                                opacity=0.5,
+                                center=center,
+                                color="Crime type",
+                                zoom=14,
+                                )
+        fig.update_layout(mapbox_style='dark',
+                          mapbox_accesstoken=token,
+                          autosize=True,
+                          margin={'l': 0, 'r': 0, 't': 0, 'b': 0},
+                          legend={'x':0, 'xanchor': 'left',
+                                  'bgcolor': 'rgb(25, 26, 26)',
+                                  'font_color': 'white',
+                                  'title_font_color': 'white'
+                                  })
 
-    return fig
+        fig.update_traces(hoverinfo='skip', hovertemplate=None)
+        return fig
+
+    else:
+        center = {"lat": 51.5123, "lon": -0.1}
+        fig = px.scatter_mapbox(dff,
+                                lat="Latitude",
+                                lon="Longitude",
+                                center=center,
+                                opacity=0.5,
+                                color="Crime type",
+                                zoom=11
+                                )
+        fig.update_layout(mapbox_style='dark',
+                          mapbox_accesstoken=token,
+                          autosize=True,
+                          margin={'l': 0, 'r': 0, 't': 0, 'b': 0},
+                          legend={'x':0, 'xanchor': 'left',
+                                  'bgcolor': 'rgb(25, 26, 26)',
+                                  'font_color': 'white',
+                                  'title_font_color': 'white'
+                                  })
+        fig.update_traces(hoverinfo='skip', hovertemplate=None)
+        return fig
+
+
 
 
 if __name__ == '__main__':
