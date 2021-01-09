@@ -9,12 +9,12 @@ from ukpostcodeutils import validation
 
 #Plan:
 
-# Put our big big map on the right hand side.
-# Slowly add in functionality for all buttons.
+# Prepare grouped datasets for crime type, population number, year, month, LSOA code, MSOA, code
 
-# Two visualization types, heatmap and scatter.
-# Put these in the header: Select vizualisation type.
-# Will affect menus that pop up,
+# Add in a button for LSOA/MSOA that appears in agg mode. Remove the button for Brighten in agg mode.
+
+# Compute aggregations upfront in a data processing callback,
+# Then feed it to our aggregate mode.
 
 # For heatmap, options will be by year. Year should be a range.
 # multiple choice dropdown menu to choose crimes. Also have checkbox to pick all.
@@ -23,11 +23,6 @@ from ukpostcodeutils import validation
 # Heatmap will group by some district - find a way to do this. maybe upload a
 # Grouped dataset that changes depending on the option?
 # Colour of each district should be: Crime rate per ___ per year.
-
-# For scatter, options will be year and month - slider instead of range.
-# Radio items to suggest which crime
-# Optional postal code entry that zooms in on where you want
-
 # Format it like https://dash-gallery.plotly.host/dash-opioid-epidemic/
 
 # On the right, have a select method option: Whole of UK, or selected counties.
@@ -37,15 +32,13 @@ from ukpostcodeutils import validation
 # Once you've done that, tidy up everything. sort out transparency, colours.
 # Finally, OPTIMIZE! make fast.
 
-df_street = pd.read_csv("street_data.csv")
+df_street = pd.read_csv("street_data_test.csv")
 # Change the writing format for concatDatasets so it writes a usable date!
 
 token = "pk.eyJ1IjoiZXRoYW5jaGVvbmciLCJhIjoiY2tqbWRtdmNnMDN2dTJ3cGVyOHdpaDJuOSJ9.v7rcDmVITTKevrcT5HCXKA"
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 chart_options = ['chart a', 'chart b']
-
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 def getPostalCoords(postal_code):
     # Function that takes a UK postal code as a string and returns coords as a df
@@ -68,6 +61,7 @@ crime_color_map = {
     "Violence and sexual offences": "#D1BBD7",
 }
 
+app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
 
 app.layout = html.Div([
     html.Div([
@@ -87,10 +81,10 @@ app.layout = html.Div([
                 dcc.RadioItems( # Change this into a cool button that changes color!
                     id='visualisation-type-radio-items',
                     options=[
-                        {'label': 'Aggregate Crimes', 'value': 'agg'},
-                        {'label': 'Individual Crimes', 'value': 'ind'}
+                        {'label': 'Individual Crimes', 'value': 'ind'},
+                        {'label': 'Aggregate Crimes', 'value': 'agg'}
                     ],
-                    value='agg',
+                    value='ind',
                 )
             ],
             style={'display':'inline-block','width': '48%'},
@@ -115,27 +109,7 @@ app.layout = html.Div([
             id='postal-container'
             ),
 
-            html.Div([
-                html.P(
-                    'Select the date:',
-                    id='date-slider-text'),
-                dcc.Slider(
-                    id='year-slider',
-                    min=df_street['Year'].min(),
-                    max=df_street['Year'].max(),
-                    value=df_street['Year'].min(),
-                    marks={str(year): str(year) for year in df_street['Year'].unique()},
-                    step=None
-                ),
-                dcc.Slider(
-                    id='month-slider',
-                    min=df_street['Month'].min(),
-                    max=df_street['Month'].max(),
-                    value=df_street['Month'].min(),
-                    marks={str(month): str(month) for month in df_street['Month'].unique()},
-                    step=None
-                ),
-            ],
+            html.Div(
             style={},
             id='date-container'
             ),
@@ -161,7 +135,8 @@ app.layout = html.Div([
                 dcc.Checklist(
                     id='highlight',
                     options=[{'label': 'Brighten Individual Crimes', 'value': 'On'}],
-                    value=[]
+                    value=[],
+                    style=dict()
                 )
             ],
             style={},
@@ -218,6 +193,56 @@ app.layout = html.Div([
 ])
 
 @app.callback(
+    Output('date-container', 'children'),
+    Input('visualisation-type-radio-items', 'value')
+)
+def changeVisualizationType(current_type):
+    if current_type=="ind":
+        return [
+            html.P(
+                'Select the date:',
+                id='date-slider-text'),
+            dcc.Slider(
+                id='year-slider',
+                min=df_street['Year'].min(),
+                max=df_street['Year'].max(),
+                value=df_street['Year'].min(),
+                marks={str(year): str(year) for year in df_street['Year'].unique()},
+                step=None
+            ),
+            dcc.Slider(
+                id='month-slider',
+                min=df_street['Month'].min(),
+                max=df_street['Month'].max(),
+                value=df_street['Month'].min(),
+                marks={str(month): str(month) for month in df_street['Month'].unique()},
+                step=None
+            )
+        ]
+    elif current_type=="agg":
+        return [
+            html.P(
+                'Select the date range:',
+                id='date-slider-text'),
+            dcc.RangeSlider(
+                id='year-slider',
+                min=df_street['Year'].min(),
+                max=df_street['Year'].max(),
+                value=[df_street['Year'].min(), df_street['Year'].max()],
+                marks={str(year): str(year) for year in df_street['Year'].unique()},
+                step=None
+            ),
+            dcc.RangeSlider(
+                id='month-slider',
+                min=df_street['Month'].min(),
+                max=df_street['Month'].max(),
+                value=[df_street['Month'].min(), df_street['Month'].max()],
+                marks={str(month): str(month) for month in df_street['Month'].unique()},
+                step=None
+            )
+        ]
+
+@app.callback(
     Output('crime-dropdown', 'value'),
     Input('select-all', 'value'),
     State('crime-dropdown', 'value')
@@ -235,8 +260,7 @@ def checkSelected(selected, current_values):
     Input('month-slider', 'value'),
     Input('crime-dropdown', 'value'),
     Input('highlight', 'value'),
-    State('postal-input','value'),
-
+    State('postal-input','value')
 )
 def updateMap(n_clicks, year, month, crime_types, highlight, postal):
     dff = df_street[(df_street['Year']==year) & (df_street['Month']==month)
@@ -295,8 +319,5 @@ def updateMap(n_clicks, year, month, crime_types, highlight, postal):
         fig.update_traces(hoverinfo='skip', hovertemplate=None, marker_size=10)
         return fig
 
-
-
-
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False,dev_tools_ui=False,dev_tools_props_check=False)
