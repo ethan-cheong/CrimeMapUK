@@ -5,16 +5,16 @@ from dash.dependencies import Input, Output, State
 import plotly.express as px
 import pandas as pd
 import pgeocode
-from ukpostcodeutils import validation
 
 #Plan:
 
-# Prepare grouped datasets for crime type, population number, year, month, LSOA code, MSOA, code
-
 # Add in a button for LSOA/MSOA that appears in agg mode. Remove the button for Brighten in agg mode.
+# Prepare grouped datasets for crime type, population number, year, month, LSOA code, MSOA, code
 
 # Compute aggregations upfront in a data processing callback,
 # Then feed it to our aggregate mode.
+
+# Add in aggregate mode functionality
 
 # For heatmap, options will be by year. Year should be a range.
 # multiple choice dropdown menu to choose crimes. Also have checkbox to pick all.
@@ -137,8 +137,17 @@ app.layout = html.Div([
                     options=[{'label': 'Brighten Individual Crimes', 'value': 'On'}],
                     value=[],
                     style=dict()
-                )
-            ],
+                ),
+                dcc.RadioItems(
+                    id='boundaries',
+                    options=[
+                        {'label': 'Lower-layer Super Output Area', 'value': 'LSOA'},
+                        {'label': 'Middle-layer Super Output Area', 'value': 'MSOA'},
+                    ],
+                    value='MSOA',
+                    style=dict()
+                    )
+                ],
             style={},
             id='other-options-container'
             ),
@@ -194,11 +203,13 @@ app.layout = html.Div([
 
 @app.callback(
     Output('date-container', 'children'),
+    Output('highlight', 'style'),
+    Output('boundaries', 'style'),
     Input('visualisation-type-radio-items', 'value')
 )
 def changeVisualizationType(current_type):
     if current_type=="ind":
-        return [
+        return [[
             html.P(
                 'Select the date:',
                 id='date-slider-text'),
@@ -218,9 +229,11 @@ def changeVisualizationType(current_type):
                 marks={str(month): str(month) for month in df_street['Month'].unique()},
                 step=None
             )
-        ]
+        ],
+        dict(),
+        dict(display='none')]
     elif current_type=="agg":
-        return [
+        return [[
             html.P(
                 'Select the date range:',
                 id='date-slider-text'),
@@ -240,7 +253,9 @@ def changeVisualizationType(current_type):
                 marks={str(month): str(month) for month in df_street['Month'].unique()},
                 step=None
             )
-        ]
+        ],
+        dict(display='none'),
+        dict()]
 
 @app.callback(
     Output('crime-dropdown', 'value'),
@@ -320,4 +335,4 @@ def updateMap(n_clicks, year, month, crime_types, highlight, postal):
         return fig
 
 if __name__ == '__main__':
-    app.run_server(debug=False,dev_tools_ui=False,dev_tools_props_check=False)
+    app.run_server(debug=True)
