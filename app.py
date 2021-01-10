@@ -8,7 +8,6 @@ import pgeocode
 
 #Plan:
 
-# Add in a button for LSOA/MSOA that appears in agg mode. Remove the button for Brighten in agg mode.
 # Prepare grouped datasets for crime type, population number, year, month, LSOA code, MSOA, code
 
 # Compute aggregations upfront in a data processing callback,
@@ -29,10 +28,12 @@ import pgeocode
 # below that, have a select chart option, that provides and plots multiple
 # metrics.
 
-# Once you've done that, tidy up everything. sort out transparency, colours.
+# Once you've done that, tidy up everything with refactoring
+#. sort out transparency, colours.
 # Finally, OPTIMIZE! make fast.
 
 df_street = pd.read_csv("street_data_test.csv")
+df_street_agg = pd.read_csv("street_data_agg.csv")
 # Change the writing format for concatDatasets so it writes a usable date!
 
 token = "pk.eyJ1IjoiZXRoYW5jaGVvbmciLCJhIjoiY2tqbWRtdmNnMDN2dTJ3cGVyOHdpaDJuOSJ9.v7rcDmVITTKevrcT5HCXKA"
@@ -190,9 +191,9 @@ app.layout = html.Div([
 
     html.Div([
         dcc.Graph(
-            id='scatter-map',
-            style={'height': 800}
-        ),
+            id='map',
+            style={'height': '800px'}
+            )
     ],
     style={'width': '48%', 'display': 'inline-block', 'float': 'right',
            'height': '100%'},
@@ -269,7 +270,8 @@ def checkSelected(selected, current_values):
         return current_values
 
 @app.callback(
-    Output('scatter-map', 'figure'),
+    Output('map', 'figure'),
+    Input('visualisation-type-radio-items', 'value'),
     Input('postal-enter-button', 'n_clicks'),
     Input('year-slider', 'value'),
     Input('month-slider', 'value'),
@@ -277,62 +279,70 @@ def checkSelected(selected, current_values):
     Input('highlight', 'value'),
     State('postal-input','value')
 )
-def updateMap(n_clicks, year, month, crime_types, highlight, postal):
-    dff = df_street[(df_street['Year']==year) & (df_street['Month']==month)
-    & (df_street['Crime type'].isin(crime_types))]
+def updateMap(current_type, n_clicks, year, month, crime_types, highlight, postal):
+    if current_type == "ind":
+        dff = df_street[(df_street['Year']==year) & (df_street['Month']==month)
+        & (df_street['Crime type'].isin(crime_types))]
 
-    if highlight:
-        alpha = 1
-    else:
-        alpha = 0.3
+        if highlight:
+            alpha = 1
+        else:
+            alpha = 0.3
 
-    if postal:
-        coords = getPostalCoords(postal)
-        center = dict(lat = coords['latitude'].item(), lon = coords['longitude'].item())
-        fig = px.scatter_mapbox(dff,
-                                lat="Latitude",
-                                lon="Longitude",
-                                opacity=alpha,
-                                center=center,
-                                color="Crime type",
-                                zoom=14,
-                                color_discrete_map=crime_color_map
-                                )
-        fig.update_layout(mapbox_style='dark',
-                          mapbox_accesstoken=token,
-                          autosize=True,
-                          margin={'l': 0, 'r': 0, 't': 0, 'b': 0},
-                          legend={'x':0, 'xanchor': 'left',
-                                  'bgcolor': 'rgb(25, 26, 26)',
-                                  'font_color': 'white',
-                                  'title_font_color': 'white'
-                                  })
+        if postal:
+            coords = getPostalCoords(postal)
+            center = dict(lat = coords['latitude'].item(), lon = coords['longitude'].item())
+            fig = px.scatter_mapbox(dff,
+                                    lat="Latitude",
+                                    lon="Longitude",
+                                    opacity=alpha,
+                                    center=center,
+                                    color="Crime type",
+                                    zoom=14,
+                                    color_discrete_map=crime_color_map
+                                    )
+            fig.update_layout(mapbox_style='dark',
+                              mapbox_accesstoken=token,
+                              autosize=True,
+                              margin={'l': 0, 'r': 0, 't': 0, 'b': 0},
+                              legend={'x':0, 'xanchor': 'left',
+                                      'bgcolor': 'rgb(25, 26, 26)',
+                                      'font_color': 'white',
+                                      'title_font_color': 'white'
+                                      })
 
-        fig.update_traces(hoverinfo='skip', hovertemplate=None, marker_size=10)
-        return fig
+            fig.update_traces(hoverinfo='skip', hovertemplate=None, marker_size=10)
+            return fig
 
-    else:
-        center = {"lat": 51.5123, "lon": -0.1}
-        fig = px.scatter_mapbox(dff,
-                                lat="Latitude",
-                                lon="Longitude",
-                                center=center,
-                                opacity=alpha,
-                                color="Crime type",
-                                zoom=11,
-                                color_discrete_map=crime_color_map
-                                )
-        fig.update_layout(mapbox_style='dark',
-                          mapbox_accesstoken=token,
-                          autosize=True,
-                          margin={'l': 0, 'r': 0, 't': 0, 'b': 0},
-                          legend={'x':0, 'xanchor': 'left',
-                                  'bgcolor': 'rgb(25, 26, 26)',
-                                  'font_color': 'white',
-                                  'title_font_color': 'white'
-                                  })
-        fig.update_traces(hoverinfo='skip', hovertemplate=None, marker_size=10)
-        return fig
+        else:
+            center = {"lat": 51.5123, "lon": -0.1}
+            fig = px.scatter_mapbox(dff,
+                                    lat="Latitude",
+                                    lon="Longitude",
+                                    center=center,
+                                    opacity=alpha,
+                                    color="Crime type",
+                                    zoom=11,
+                                    color_discrete_map=crime_color_map
+                                    )
+            fig.update_layout(mapbox_style='dark',
+                              mapbox_accesstoken=token,
+                              autosize=True,
+                              margin={'l': 0, 'r': 0, 't': 0, 'b': 0},
+                              legend={'x':0, 'xanchor': 'left',
+                                      'bgcolor': 'rgb(25, 26, 26)',
+                                      'font_color': 'white',
+                                      'title_font_color': 'white'
+                                      })
+            fig.update_traces(hoverinfo='skip', hovertemplate=None, marker_size=10)
+            return fig
+    elif flag == "agg":
+        dff = df_street_agg[(df_street_agg['Year'].isin(year)) &
+                            (df_street_agg['Month'].isin(month)) &
+                            (df_street_agg['Crime'].isin(crime_types))]
+        # Build the rest of this! Using mapping ref
+
+
 
 if __name__ == '__main__':
     app.run_server(debug=True)
