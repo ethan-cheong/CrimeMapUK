@@ -5,6 +5,8 @@ from dash.dependencies import Input, Output, State
 import plotly.express as px
 import pandas as pd
 import pgeocode
+import json
+import math
 
 #Plan:
 
@@ -13,12 +15,7 @@ import pgeocode
 # Compute aggregations upfront in a data processing callback,
 # Then feed it to our aggregate mode.
 
-# Add in aggregate mode functionality
 
-# For heatmap, options will be by year. Year should be a range.
-# multiple choice dropdown menu to choose crimes. Also have checkbox to pick all.
-# Optional Postal code entry that will show where you want. Otherwise,
-# Big map of the UK.
 # Heatmap will group by some district - find a way to do this. maybe upload a
 # Grouped dataset that changes depending on the option?
 # Colour of each district should be: Crime rate per ___ per year.
@@ -34,7 +31,9 @@ import pgeocode
 
 df_street = pd.read_csv("street_data_test.csv")
 df_street_agg = pd.read_csv("street_data_agg.csv")
-# Change the writing format for concatDatasets so it writes a usable date!
+
+with open('lsoa_boundaries.geojson') as f:
+    lsoa = json.load(f)
 
 token = "pk.eyJ1IjoiZXRoYW5jaGVvbmciLCJhIjoiY2tqbWRtdmNnMDN2dTJ3cGVyOHdpaDJuOSJ9.v7rcDmVITTKevrcT5HCXKA"
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
@@ -44,6 +43,12 @@ chart_options = ['chart a', 'chart b']
 def getPostalCoords(postal_code):
     # Function that takes a UK postal code as a string and returns coords as a df
     return pgeocode.Nominatim('gb').query_postal_code(postal_code)[['latitude','longitude']]
+
+def toList(item):
+    if isinstance(item, list):
+        return item
+    else:
+        return [item]
 
 crime_color_map = {
     "Anti-social behaviour": "#DC050C",
@@ -110,8 +115,31 @@ app.layout = html.Div([
             id='postal-container'
             ),
 
-            html.Div(
-            style={},
+            html.Div([
+                html.P(
+                    'Select the date:',
+                    id='date-slider-text'),
+                dcc.Slider(
+                    id='year-slider',
+                    min=df_street['Year'].min(),
+                    max=df_street['Year'].max(),
+                    value=df_street['Year'].min(),
+                    marks={str(year): str(year) for year in df_street['Year'].unique()},
+                    step=None
+                ),
+                html.Div([
+                    dcc.Slider(
+                        id='month-slider',
+                        min=df_street['Month'].min(),
+                        max=df_street['Month'].max(),
+                        value=df_street['Month'].min(),
+                        marks={str(month): str(month) for month in df_street['Month'].unique()},
+                        step=None,
+                        )]
+                        , style = {},
+                        id = 'month-slider-div'
+                )
+            ],
             id='date-container'
             ),
 
@@ -203,60 +231,24 @@ app.layout = html.Div([
 ])
 
 @app.callback(
-    Output('date-container', 'children'),
+    Output('month-slider-div', 'style'),
     Output('highlight', 'style'),
     Output('boundaries', 'style'),
     Input('visualisation-type-radio-items', 'value')
 )
 def changeVisualizationType(current_type):
     if current_type=="ind":
-        return [[
-            html.P(
-                'Select the date:',
-                id='date-slider-text'),
-            dcc.Slider(
-                id='year-slider',
-                min=df_street['Year'].min(),
-                max=df_street['Year'].max(),
-                value=df_street['Year'].min(),
-                marks={str(year): str(year) for year in df_street['Year'].unique()},
-                step=None
-            ),
-            dcc.Slider(
-                id='month-slider',
-                min=df_street['Month'].min(),
-                max=df_street['Month'].max(),
-                value=df_street['Month'].min(),
-                marks={str(month): str(month) for month in df_street['Month'].unique()},
-                step=None
-            )
-        ],
-        dict(),
-        dict(display='none')]
+        return [
+            dict(),
+            dict(),
+            dict(display='none')
+            ]
     elif current_type=="agg":
-        return [[
-            html.P(
-                'Select the date range:',
-                id='date-slider-text'),
-            dcc.RangeSlider(
-                id='year-slider',
-                min=df_street['Year'].min(),
-                max=df_street['Year'].max(),
-                value=[df_street['Year'].min(), df_street['Year'].max()],
-                marks={str(year): str(year) for year in df_street['Year'].unique()},
-                step=None
-            ),
-            dcc.RangeSlider(
-                id='month-slider',
-                min=df_street['Month'].min(),
-                max=df_street['Month'].max(),
-                value=[df_street['Month'].min(), df_street['Month'].max()],
-                marks={str(month): str(month) for month in df_street['Month'].unique()},
-                step=None
-            )
-        ],
-        dict(display='none'),
-        dict()]
+        return [
+            dict(display='none'),
+            dict(display='none'),
+            dict()
+            ]
 
 @app.callback(
     Output('crime-dropdown', 'value'),
@@ -280,10 +272,10 @@ def checkSelected(selected, current_values):
     State('postal-input','value')
 )
 def updateMap(current_type, n_clicks, year, month, crime_types, highlight, postal):
+    year = int(year)
+    month = int(month)
     if current_type == "ind":
-        dff = df_street[(df_street['Year']==year) & (df_street['Month']==month)
-        & (df_street['Crime type'].isin(crime_types))]
-
+        dff = df_street[(df_street['Year']==year) & (df_street['Month']==month) & (df_street['Crime type'].isin(crime_types))]
         if highlight:
             alpha = 1
         else:
@@ -310,7 +302,6 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight, posta
                                       'font_color': 'white',
                                       'title_font_color': 'white'
                                       })
-
             fig.update_traces(hoverinfo='skip', hovertemplate=None, marker_size=10)
             return fig
 
@@ -336,12 +327,62 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight, posta
                                       })
             fig.update_traces(hoverinfo='skip', hovertemplate=None, marker_size=10)
             return fig
-    elif flag == "agg":
-        dff = df_street_agg[(df_street_agg['Year'].isin(year)) &
-                            (df_street_agg['Month'].isin(month)) &
-                            (df_street_agg['Crime'].isin(crime_types))]
-        # Build the rest of this! Using mapping ref
 
+    elif current_type == "agg":
+        # Crude fix for an annoying problem that arises if isin() isn't passed
+        # a list
+        crime_list = toList(crime_types)
+
+        dff = df_street_agg[(df_street_agg['Year']==year) & df_street_agg['Crime'].isin(crime_list)]
+        dff = dff.groupby('LSOA').agg({'n': 'sum'})
+        dff['LSOA']=dff.index
+        dff['logn']=dff['n'].apply(lambda x:math.log(x))
+
+        if postal:
+            coords = getPostalCoords(postal)
+            center = dict(lat = coords['latitude'].item(), lon = coords['longitude'].item())
+            fig = px.choropleth_mapbox(dff,
+                                       geojson=lsoa,
+                                       locations='LSOA',
+                                       featureidkey='properties.LSOA11CD',
+                                       opacity=0.5,
+                                       center=center,
+                                       color="logn",
+                                       zoom=11,
+                                       color_continuous_scale="magma",
+                                       labels={'logn':'Crime Count (log)'}
+                                       )
+            fig.update_layout(mapbox_style='dark',
+                              mapbox_accesstoken=token,
+                              autosize=True,
+                              margin={'l': 0, 'r': 0, 't': 0, 'b': 0}
+                              )
+            fig.update_traces(
+
+            )
+            return fig
+        else:
+            center = {"lat": 53.26, "lon": -1.1}
+            fig = px.choropleth_mapbox(dff,
+                                       geojson=lsoa,
+                                       featureidkey='properties.LSOA11CD',
+                                       locations='LSOA',
+                                       opacity=0.5,
+                                       center=center,
+                                       color="logn",
+                                       zoom=6,
+                                       color_continuous_scale="magma",
+                                       labels={'logn':'Crime Count (log)'}
+                                       )
+            fig.update_layout(mapbox_style='dark',
+                              mapbox_accesstoken=token,
+                              autosize=True,
+                              margin={'l': 0, 'r': 0, 't': 0, 'b': 0}
+                              )
+            fig.update_traces(
+
+            )
+            return fig
 
 
 if __name__ == '__main__':
