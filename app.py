@@ -4,30 +4,18 @@ import dash_html_components as html
 from dash.dependencies import Input, Output, State
 import plotly.express as px
 import pandas as pd
+import numpy as np
 import pgeocode
 import json
 import math
 
 #Plan:
 
-# Prepare grouped datasets for crime type, population number, year, month, LSOA code, MSOA, code
-
-# Compute aggregations upfront in a data processing callback,
-# Then feed it to our aggregate mode.
-
-
-# Heatmap will group by some district - find a way to do this. maybe upload a
-# Grouped dataset that changes depending on the option?
-# Colour of each district should be: Crime rate per ___ per year.
-# Format it like https://dash-gallery.plotly.host/dash-opioid-epidemic/
-
-# On the right, have a select method option: Whole of UK, or selected counties.
-# below that, have a select chart option, that provides and plots multiple
-# metrics.
-
-# Once you've done that, tidy up everything with refactoring
-#. sort out transparency, colours.
-# Finally, OPTIMIZE! make fast.
+# Sort out color bar and visualization labels (not as important)
+# Do visualizations in the visualization pane.
+# CSS
+# Refactoring
+# Clean up app syntax
 
 df_street = pd.read_csv("street_data_test.csv")
 df_street_agg = pd.read_csv("street_data_agg.csv")
@@ -35,8 +23,10 @@ df_street_agg = pd.read_csv("street_data_agg.csv")
 with open('lsoa_boundaries.geojson') as f:
     lsoa = json.load(f)
 
+with open('lad_boundaries.geojson') as f:
+    lad = json.load(f)
+
 token = "pk.eyJ1IjoiZXRoYW5jaGVvbmciLCJhIjoiY2tqbWRtdmNnMDN2dTJ3cGVyOHdpaDJuOSJ9.v7rcDmVITTKevrcT5HCXKA"
-external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 chart_options = ['chart a', 'chart b']
 
@@ -67,7 +57,7 @@ crime_color_map = {
     "Violence and sexual offences": "#D1BBD7",
 }
 
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets)
+app = dash.Dash(__name__)
 
 app.layout = html.Div([
     html.Div([
@@ -82,19 +72,19 @@ app.layout = html.Div([
         html.Div([
 
             html.Div([
-                html.P('Visualisation type:',
-                       id='visualisation-type-text'),
+                html.P('Visualization type:',
+                       id='visualization-type-text'),
                 dcc.RadioItems( # Change this into a cool button that changes color!
-                    id='visualisation-type-radio-items',
+                    id='visualization-type-radio-items',
                     options=[
+                        {'label': 'Aggregate Crimes', 'value': 'agg'},
                         {'label': 'Individual Crimes', 'value': 'ind'},
-                        {'label': 'Aggregate Crimes', 'value': 'agg'}
                     ],
-                    value='ind',
+                    value='agg',
                 )
             ],
             style={'display':'inline-block','width': '48%'},
-            id='visualisation-type-container'
+            id='visualization-type-container'
             ),
 
             html.Div([
@@ -156,7 +146,7 @@ app.layout = html.Div([
                 dcc.Dropdown(
                     id='crime-dropdown',
                     options=[
-                        {'label': c, 'value': c} for c in df_street['Crime type'].unique()
+                        {'label': c, 'value': c} for c in df_street['Crime'].unique()
                     ],
                     value=['Theft from the person'],
                     multi=True
@@ -170,10 +160,10 @@ app.layout = html.Div([
                 dcc.RadioItems(
                     id='boundaries',
                     options=[
+                        {'label': 'Local Authority District', 'value': 'LAD'},
                         {'label': 'Lower-layer Super Output Area', 'value': 'LSOA'},
-                        {'label': 'Middle-layer Super Output Area', 'value': 'MSOA'},
                     ],
-                    value='MSOA',
+                    value='LAD',
                     style=dict()
                     )
                 ],
@@ -214,13 +204,13 @@ app.layout = html.Div([
 
     ],
     id='left-column',
-    style={'width': '48%', 'display': 'inline-block','background-color': 'powderblue'}
+    style={'width': '48%', 'display': 'inline-block'}
     ),
 
     html.Div([
         dcc.Graph(
             id='map',
-            style={'height': '800px'}
+            style={'height': '815px'}
             )
     ],
     style={'width': '48%', 'display': 'inline-block', 'float': 'right',
@@ -234,7 +224,7 @@ app.layout = html.Div([
     Output('month-slider-div', 'style'),
     Output('highlight', 'style'),
     Output('boundaries', 'style'),
-    Input('visualisation-type-radio-items', 'value')
+    Input('visualization-type-radio-items', 'value')
 )
 def changeVisualizationType(current_type):
     if current_type=="ind":
@@ -257,25 +247,27 @@ def changeVisualizationType(current_type):
 )
 def checkSelected(selected, current_values):
     if selected:
-        return [c for c in df_street['Crime type'].unique()]
+        return [c for c in df_street['Crime'].unique()]
     else:
         return current_values
 
 @app.callback(
     Output('map', 'figure'),
-    Input('visualisation-type-radio-items', 'value'),
+    Input('visualization-type-radio-items', 'value'),
     Input('postal-enter-button', 'n_clicks'),
     Input('year-slider', 'value'),
     Input('month-slider', 'value'),
     Input('crime-dropdown', 'value'),
     Input('highlight', 'value'),
+    Input('boundaries', 'value'),
     State('postal-input','value')
 )
-def updateMap(current_type, n_clicks, year, month, crime_types, highlight, postal):
+def updateMap(current_type, n_clicks, year, month, crime_types, highlight,
+              boundaries, postal):
     year = int(year)
     month = int(month)
     if current_type == "ind":
-        dff = df_street[(df_street['Year']==year) & (df_street['Month']==month) & (df_street['Crime type'].isin(crime_types))]
+        dff = df_street[(df_street['Year']==year) & (df_street['Month']==month) & (df_street['Crime'].isin(crime_types))]
         if highlight:
             alpha = 1
         else:
@@ -289,7 +281,7 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight, posta
                                     lon="Longitude",
                                     opacity=alpha,
                                     center=center,
-                                    color="Crime type",
+                                    color="Crime",
                                     zoom=14,
                                     color_discrete_map=crime_color_map
                                     )
@@ -312,7 +304,7 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight, posta
                                     lon="Longitude",
                                     center=center,
                                     opacity=alpha,
-                                    color="Crime type",
+                                    color="Crime",
                                     zoom=11,
                                     color_discrete_map=crime_color_map
                                     )
@@ -329,61 +321,119 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight, posta
             return fig
 
     elif current_type == "agg":
-        # Crude fix for an annoying problem that arises if isin() isn't passed
-        # a list
+
         crime_list = toList(crime_types)
-
+        # Crude fix for an annoying problem that arises if isin() isn't passed a list
         dff = df_street_agg[(df_street_agg['Year']==year) & df_street_agg['Crime'].isin(crime_list)]
-        dff = dff.groupby('LSOA').agg({'n': 'sum'})
-        dff['LSOA']=dff.index
-        dff['logn']=dff['n'].apply(lambda x:math.log(x))
 
-        if postal:
-            coords = getPostalCoords(postal)
-            center = dict(lat = coords['latitude'].item(), lon = coords['longitude'].item())
-            fig = px.choropleth_mapbox(dff,
-                                       geojson=lsoa,
-                                       locations='LSOA',
-                                       featureidkey='properties.LSOA11CD',
-                                       opacity=0.5,
-                                       center=center,
-                                       color="logn",
-                                       zoom=11,
-                                       color_continuous_scale="magma",
-                                       labels={'logn':'Crime Count (log)'}
-                                       )
-            fig.update_layout(mapbox_style='dark',
-                              mapbox_accesstoken=token,
-                              autosize=True,
-                              margin={'l': 0, 'r': 0, 't': 0, 'b': 0}
-                              )
-            fig.update_traces(
+        if boundaries == 'LSOA':
 
-            )
-            return fig
-        else:
-            center = {"lat": 53.26, "lon": -1.1}
-            fig = px.choropleth_mapbox(dff,
-                                       geojson=lsoa,
-                                       featureidkey='properties.LSOA11CD',
-                                       locations='LSOA',
-                                       opacity=0.5,
-                                       center=center,
-                                       color="logn",
-                                       zoom=6,
-                                       color_continuous_scale="magma",
-                                       labels={'logn':'Crime Count (log)'}
-                                       )
-            fig.update_layout(mapbox_style='dark',
-                              mapbox_accesstoken=token,
-                              autosize=True,
-                              margin={'l': 0, 'r': 0, 't': 0, 'b': 0}
-                              )
-            fig.update_traces(
+            dff = dff.groupby(['LSOA', 'LSOAName']).agg({'n': 'sum'})
+            dff.reset_index(level=['LSOA', 'LSOAName'], inplace=True)
+            dff['Number of crimes (log)']=dff['n'].apply(lambda x:round(math.log(x),2))
+            dff['Number of crimes (actual)'] = dff['n']
 
-            )
-            return fig
+            if postal:
+                coords = getPostalCoords(postal)
+                center = dict(lat = coords['latitude'].item(), lon = coords['longitude'].item())
+                fig = px.choropleth_mapbox(dff,
+                                           geojson=lsoa,
+                                           locations='LSOA',
+                                           featureidkey='properties.LSOA11CD',
+                                           opacity=0.5,
+                                           center=center,
+                                           color='Number of crimes (log)',
+                                           zoom=11,
+                                           color_continuous_scale='magma',
+                                           hover_data=['LSOAName','Number of crimes (log)','Number of crimes (actual)',]
+                                           )
+                fig.update_layout(mapbox_style='dark',
+                                  mapbox_accesstoken=token,
+                                  autosize=True,
+                                  margin={'l': 0, 'r': 0, 't': 0, 'b': 0}
+                                  )
+                return fig
+            else:
+                center = {'lat': 53.26, 'lon': -1.1}
+                fig = px.choropleth_mapbox(dff,
+                                           geojson=lsoa,
+                                           featureidkey='properties.LSOA11CD',
+                                           locations='LSOA',
+                                           opacity=0.5,
+                                           center=center,
+                                           color='Number of crimes (log)',
+                                           zoom=6,
+                                           color_continuous_scale='magma',
+                                           hover_data=['LSOAName','Number of crimes (log)','Number of crimes (actual)',]
+                                           )
+                fig.update_layout(mapbox_style='dark',
+                                  mapbox_accesstoken=token,
+                                  autosize=True,
+                                  margin={'l': 0, 'r': 0, 't': 0, 'b': 0}
+                                  )
 
+                return fig
+
+        elif boundaries == 'LAD':
+        # Modify the dataset to include POPULATION SIZE as well.
+        # Divide by population size, since LADs do not have uniform population size.
+
+            dff['Crimes per 1000 people'] = dff['n']/dff['Population']*1000
+            dff = dff.groupby(['LAD', 'LADName']).agg({'Crimes per 1000 people': 'sum'})
+            dff.reset_index(level=['LAD', 'LADName'], inplace=True)
+            # The line below is a quick fix to prevent a math error when we take log(0)
+            dff['Crimes per 1000 people'] = dff['Crimes per 1000 people'].apply(lambda x: 1 if round(x,2)==0 else round(x,2))
+            dff['Log crime rate'] = dff['Crimes per 1000 people'].apply(lambda x: round(math.log(x), 2))
+
+            if postal:
+                coords = getPostalCoords(postal)
+                center = dict(lat = coords['latitude'].item(), lon = coords['longitude'].item())
+                fig = px.choropleth_mapbox(dff,
+                                           geojson=lad,
+                                           locations='LAD',
+                                           featureidkey='properties.LAD20CD',
+                                           opacity=0.5,
+                                           center=center,
+                                           color='Log crime rate',
+                                           zoom=11,
+                                           color_continuous_scale='magma',
+                                           labels={'Log crime rate':'Crime rate per 1000 people (log)'},
+                                           hover_data=['LADName',
+                                                       'Log crime rate',
+                                                       'Crimes per 1000 people',
+                                                       ]
+                                           )
+                fig.update_layout(mapbox_style='dark',
+                                  mapbox_accesstoken=token,
+                                  autosize=True,
+                                  margin={'l': 0, 'r': 0, 't': 0, 'b': 0}
+                                  )
+                fig.update_traces()
+
+                return fig
+            else:
+                center = {'lat': 53.26, 'lon': -1.1}
+                fig = px.choropleth_mapbox(dff,
+                                           geojson=lad,
+                                           featureidkey='properties.LAD20CD',
+                                           locations='LAD',
+                                           opacity=0.5,
+                                           center=center,
+                                           color='Log crime rate',
+                                           zoom=6,
+                                           color_continuous_scale="magma",
+                                           hover_data=['LADName',
+                                                       'Log crime rate',
+                                                       'Crimes per 1000 people',
+                                                       ]
+                                           )
+                fig.update_layout(mapbox_style='dark',
+                                  mapbox_accesstoken=token,
+                                  autosize=True,
+                                  margin={'l': 0, 'r': 0, 't': 0, 'b': 0}
+                                  )
+
+                return fig
 
 if __name__ == '__main__':
     app.run_server(debug=True)
