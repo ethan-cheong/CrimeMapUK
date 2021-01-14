@@ -11,13 +11,14 @@ import math
 
 #Plan:
 
-# Sort out color bar and visualization labels (not as important)
-# Do visualizations in the visualization pane.
+# Callback to adjust map height based on the visualization used;
+# Interactive visualizations in visualization pane,
 # CSS
+# If time permits,
 # Refactoring
 # Clean up app syntax
 
-df_street = pd.read_csv("street_data_test.csv")
+df_street = pd.read_csv("street_data_final.csv")
 df_street_agg = pd.read_csv("street_data_agg.csv")
 
 with open('lsoa_boundaries.geojson') as f:
@@ -28,7 +29,7 @@ with open('lad_boundaries.geojson') as f:
 
 token = "pk.eyJ1IjoiZXRoYW5jaGVvbmciLCJhIjoiY2tqbWRtdmNnMDN2dTJ3cGVyOHdpaDJuOSJ9.v7rcDmVITTKevrcT5HCXKA"
 
-chart_options = ['chart a', 'chart b']
+chart_options = ['Crime rate by region (Single Year)', 'Log crime rate by region (Single Year)',] #'Trends in crime rate (monthly)'
 
 def getPostalCoords(postal_code):
     # Function that takes a UK postal code as a string and returns coords as a df
@@ -61,8 +62,8 @@ app = dash.Dash(__name__)
 
 app.layout = html.Div([
     html.Div([
-        html.H1("Monthly UK Crimes"),
-        html.P('Information taken from UK Police Force.',
+        html.H1("Crimes in the UK"),
+        html.P('Crime taken from the UK Police Force API; built with Python using Dash',
                id='description')
     ], id='header'
     ),
@@ -107,7 +108,7 @@ app.layout = html.Div([
 
             html.Div([
                 html.P(
-                    'Select the date:',
+                    'Drag the slider to select the date:',
                     id='date-slider-text'),
                 dcc.Slider(
                     id='year-slider',
@@ -185,45 +186,91 @@ app.layout = html.Div([
                 ],
                 value=chart_options[0]
             ),
-            dcc.RadioItems(
-                id='chart-type-radio-items',
-                options=[
-                    {'label': 'Whole of UK', 'value': 'whole'},
-                    {'label': 'Select from map', 'value': 'select'}
-                ],
-                value='whole',
-                labelStyle={'display':'inline'}
-            ),
             dcc.Graph(
-                id='selected-chart'
-            )
-
+                id='selected-chart',
+                figure=dict(
+                    data=[dict(x=0, y=0)],
+                    layout=dict(
+                        paper_bgcolor='#191a1a',
+                        plot_bgcolor='#191a1a',
+                        autofill=True,
+                        margin=dict(t=75, r=50, b=50, l=50),
+                    )
+                )
+            ),
         ],
         id='graph-container'
         ),
 
     ],
     id='left-column',
-    style={'width': '48%', 'display': 'inline-block'}
+    style={'width': '47%', 'display': 'inline-block'}
     ),
 
     html.Div([
         dcc.Graph(
-            id='map',
-            style={'height': '815px'}
+            id='map'
             )
     ],
-    style={'width': '48%', 'display': 'inline-block', 'float': 'right',
-           'height': '100%'},
+    style={'width': '48%', 'display': 'inline-block', 'float': 'right'},
     id='right-column'
     )
 
 ])
 
 @app.callback(
+    Output('selected-chart', 'figure'),
+    Input('chart-dropdown', 'value'),
+    Input('year-slider', 'value'),
+    Input('visualization-type-radio-items', 'value'),
+    Input('map', 'selectedData')
+)
+def plotChart(chart_type, year, visualization_type, selected_data):
+    if selected_data is None or visualization_type == 'ind':
+        return dict(
+            data=[dict(x=0, y=0)],
+            layout=dict(
+                title="Click-drag on the aggregate crimes map to select regions",
+                paper_bgcolor="#191a1a",
+                plot_bgcolor="#191a1a",
+                font=dict(color="White"),
+                margin=dict(t=75, r=50, b=50, l=75),
+            ),
+        )
+
+    dff = pd.DataFrame([selected_data["points"][i]['customdata'] for i in range(len(selected_data["points"]))],
+                        columns = ['Region', 'Log crime rate', 'Crime rate'])
+    if chart_type == 'Crime rate by region (Single Year)':
+        fig = px.bar(dff, x='Region', y='Crime rate', title='Crime rate by region (Single Year)')
+        fig.update_layout(paper_bgcolor='#191a1a',
+                    plot_bgcolor='#191a1a',
+                    margin=dict(t=75, r=50, b=50, l=50),
+                    font=dict(color="White"))
+        fig.update_xaxes(categoryorder="total ascending")
+        fig.update_traces(marker_color='orange')
+
+    elif chart_type == 'Log crime rate by region (Single Year)':
+        fig = px.bar(dff, x='Region', y='Log crime rate', title='Log crime rate by region (Single Year)')
+        fig.update_layout(paper_bgcolor='#191a1a',
+                    plot_bgcolor='#191a1a',
+                    margin=dict(t=75, r=50, b=50, l=50),
+                    font=dict(color="White"))
+        fig.update_xaxes(categoryorder="total ascending")
+        fig.update_traces(marker_color='orange')
+
+    return fig
+
+
+    paper_bgcolor='#191a1a',
+    plot_bgcolor='#191a1a',
+    autofill=True,
+    margin=dict(t=75, r=50, b=50, l=50)
+
+@app.callback(
     Output('month-slider-div', 'style'),
     Output('highlight', 'style'),
     Output('boundaries', 'style'),
+    Output('map', 'style'),
     Input('visualization-type-radio-items', 'value')
 )
 def changeVisualizationType(current_type):
@@ -231,13 +278,15 @@ def changeVisualizationType(current_type):
         return [
             dict(),
             dict(),
-            dict(display='none')
+            dict(display='none'),
+            dict(height='817px')
             ]
     elif current_type=="agg":
         return [
             dict(display='none'),
             dict(display='none'),
-            dict()
+            dict(),
+            dict(height='778px')
             ]
 
 @app.callback(
@@ -322,8 +371,8 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight,
 
     elif current_type == "agg":
 
-        crime_list = toList(crime_types)
         # Crude fix for an annoying problem that arises if isin() isn't passed a list
+        crime_list = toList(crime_types)
         dff = df_street_agg[(df_street_agg['Year']==year) & df_street_agg['Crime'].isin(crime_list)]
 
         if boundaries == 'LSOA':
@@ -352,7 +401,24 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight,
                                   autosize=True,
                                   margin={'l': 0, 'r': 0, 't': 0, 'b': 0}
                                   )
+                fig.update_coloraxes(
+                    colorbar=dict(
+                        len=0.3,
+                        xanchor='left',
+                        yanchor='top',
+                        x=0,
+                        y=1,
+                    ),
+                    colorbar_tickfont=dict(
+                        color='White'
+                    ),
+                    colorbar_title=dict(
+                        font_color='White'
+                    )
+                )
+
                 return fig
+
             else:
                 center = {'lat': 53.26, 'lon': -1.1}
                 fig = px.choropleth_mapbox(dff,
@@ -371,12 +437,25 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight,
                                   autosize=True,
                                   margin={'l': 0, 'r': 0, 't': 0, 'b': 0}
                                   )
+                fig.update_coloraxes(
+                    colorbar=dict(
+                        len=0.3,
+                        xanchor='left',
+                        yanchor='top',
+                        x=0,
+                        y=1,
+                    ),
+                    colorbar_tickfont=dict(
+                        color='White'
+                    ),
+                    colorbar_title=dict(
+                        font_color='White'
+                    )
+                )
 
                 return fig
 
         elif boundaries == 'LAD':
-        # Modify the dataset to include POPULATION SIZE as well.
-        # Divide by population size, since LADs do not have uniform population size.
 
             dff['Crimes per 1000 people'] = dff['n']/dff['Population']*1000
             dff = dff.groupby(['LAD', 'LADName']).agg({'Crimes per 1000 people': 'sum'})
@@ -397,7 +476,6 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight,
                                            color='Log crime rate',
                                            zoom=11,
                                            color_continuous_scale='magma',
-                                           labels={'Log crime rate':'Crime rate per 1000 people (log)'},
                                            hover_data=['LADName',
                                                        'Log crime rate',
                                                        'Crimes per 1000 people',
@@ -408,10 +486,26 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight,
                                   autosize=True,
                                   margin={'l': 0, 'r': 0, 't': 0, 'b': 0}
                                   )
-                fig.update_traces()
+                fig.update_coloraxes(
+                    colorbar=dict(
+                        len=0.3,
+                        xanchor='left',
+                        yanchor='top',
+                        x=0,
+                        y=1,
+                    ),
+                    colorbar_tickfont=dict(
+                        color='White'
+                    ),
+                    colorbar_title=dict(
+                        font_color='White'
+                    )
+                )
 
                 return fig
+
             else:
+
                 center = {'lat': 53.26, 'lon': -1.1}
                 fig = px.choropleth_mapbox(dff,
                                            geojson=lad,
@@ -432,6 +526,21 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight,
                                   autosize=True,
                                   margin={'l': 0, 'r': 0, 't': 0, 'b': 0}
                                   )
+                fig.update_coloraxes(
+                    colorbar=dict(
+                        len=0.3,
+                        xanchor='left',
+                        yanchor='top',
+                        x=0,
+                        y=1,
+                    ),
+                    colorbar_tickfont=dict(
+                        color='White'
+                    ),
+                    colorbar_title=dict(
+                        font_color='White'
+                    )
+                )
 
                 return fig
 
