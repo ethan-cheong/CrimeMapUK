@@ -62,8 +62,8 @@ app = dash.Dash(__name__)
 
 app.layout = html.Div([
     html.Div([
-        html.H1("Crimes in the UK"),
-        html.P('Crime taken from the UK Police Force API; built with Python using Dash',
+        html.H1("Crimes in the UK 2018-2020"),
+        html.P('Crime taken from the UK Police Force API; built with Dash in Python',
                id='description')
     ], id='header'
     ),
@@ -230,7 +230,7 @@ def plotChart(chart_type, year, visualization_type, selected_data):
         return dict(
             data=[dict(x=0, y=0)],
             layout=dict(
-                title="Click-drag on the aggregate crimes map to select regions",
+                title="Use the select tool on the aggregate crimes map to select regions",
                 paper_bgcolor="#191a1a",
                 plot_bgcolor="#191a1a",
                 font=dict(color="White"),
@@ -545,4 +545,4 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight,
                 return fig
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run_server(debug=False,dev_tools_ui=False,dev_tools_props_check=False)
