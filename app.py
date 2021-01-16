@@ -9,38 +9,38 @@ import pgeocode
 import json
 import math
 
-#Plan:
+# Load datasets
 
-# Callback to adjust map height based on the visualization used;
-# Interactive visualizations in visualization pane,
-# CSS
-# If time permits,
-# Refactoring
-# Clean up app syntax
-
-df_street = pd.read_csv("street_data_final.csv")
+df_street = pd.read_csv("street_data_test.csv") # Use street_data_final in production version
 df_street_agg = pd.read_csv("street_data_agg.csv")
 
+# Load json boundaries
 with open('lsoa_boundaries.geojson') as f:
     lsoa = json.load(f)
 
 with open('lad_boundaries.geojson') as f:
     lad = json.load(f)
 
+# Token for mapbox dark mode
 token = "pk.eyJ1IjoiZXRoYW5jaGVvbmciLCJhIjoiY2tqbWRtdmNnMDN2dTJ3cGVyOHdpaDJuOSJ9.v7rcDmVITTKevrcT5HCXKA"
 
 chart_options = ['Crime rate by region (Single Year)', 'Log crime rate by region (Single Year)',] #'Trends in crime rate (monthly)'
 
-def getPostalCoords(postal_code):
+
+def get_postal_coords(postal_code):
     # Function that takes a UK postal code as a string and returns coords as a df
     return pgeocode.Nominatim('gb').query_postal_code(postal_code)[['latitude','longitude']]
 
-def toList(item):
+
+def convert_to_list(item):
+    # Function that converts an item to a list if it's not a list
     if isinstance(item, list):
         return item
     else:
         return [item]
 
+
+# Color map for each crime type
 crime_color_map = {
     "Anti-social behaviour": "#DC050C",
     "Bicycle theft": "#E8601C",
@@ -58,33 +58,32 @@ crime_color_map = {
     "Violence and sexual offences": "#D1BBD7",
 }
 
+# Initialize app
 app = dash.Dash(__name__)
 
 app.layout = html.Div([
     html.Div([
-        html.H1("Crimes in the UK 2018-2020"),
-        html.P('Crime taken from the UK Police Force API; built with Dash in Python',
-               id='description')
-    ], id='header'
+        html.H1("Crime Map UK"),
+        html.P('An interactive visualization that shows yearly crime rate in the UK by region as well as maps individual crimes by month. More information available here: ethan-cheong.github.io/crime-map-uk/.',
+               id='description'),
+        html.P('Individual crime data taken from the UK Police Force API; built with Dash in Python and hosted on AWS EC2.',
+               id='description2'),
+    ], id='header' # Header bar that spans screen
     ),
-
     html.Div([
-
         html.Div([
-
             html.Div([
-                html.P('Visualization type:',
-                       id='visualization-type-text'),
-                dcc.RadioItems( # Change this into a cool button that changes color!
+                html.P('Visualization type:', id='visualization-type-text'),
+                dcc.RadioItems(
                     id='visualization-type-radio-items',
                     options=[
                         {'label': 'Aggregate Crimes', 'value': 'agg'},
                         {'label': 'Individual Crimes', 'value': 'ind'},
                     ],
                     value='agg',
-                )
+                ) # Radio items to choose visualization type
             ],
-            style={'display':'inline-block','width': '48%'},
+            style={'display':'inline-block'},
             id='visualization-type-container'
             ),
 
@@ -100,9 +99,9 @@ app.layout = html.Div([
                     'Enter',
                     id='postal-enter-button',
                     n_clicks=0
-                )
+                ) # Optionally input a postal code
             ],
-            style={'display':'inline-block', 'float': 'right','width': '48%'},
+            style={'display':'inline-block', 'float': 'right'},
             id='postal-container'
             ),
 
@@ -116,6 +115,7 @@ app.layout = html.Div([
                     max=df_street['Year'].max(),
                     value=df_street['Year'].min(),
                     marks={str(year): str(year) for year in df_street['Year'].unique()},
+                    # Marks should show each year present in our dataset
                     step=None
                 ),
                 html.Div([
@@ -125,12 +125,13 @@ app.layout = html.Div([
                         max=df_street['Month'].max(),
                         value=df_street['Month'].min(),
                         marks={str(month): str(month) for month in df_street['Month'].unique()},
+                        # Marks should show each month in the dataset
                         step=None,
                         )]
                         , style = {},
                         id = 'month-slider-div'
-                )
-            ],
+                ) # This is contained in a Div so it can be hidden in agg mode
+            ], # Choose the date with sliders
             id='date-container'
             ),
 
@@ -170,7 +171,7 @@ app.layout = html.Div([
                 ],
             style={},
             id='other-options-container'
-            ),
+            ), # Other options
         ],
         id='input-container'
         ),
@@ -204,7 +205,7 @@ app.layout = html.Div([
 
     ],
     id='left-column',
-    style={'width': '47%', 'display': 'inline-block'}
+    style={'display': 'inline-block', 'width': '45%'}
     ),
 
     html.Div([
@@ -212,12 +213,13 @@ app.layout = html.Div([
             id='map'
             )
     ],
-    style={'width': '48%', 'display': 'inline-block', 'float': 'right'},
+    style={'display': 'inline-block', 'float': 'right', 'width': '45%'},
     id='right-column'
     )
 
 ])
 
+# This callback plots the crime rate by region graph, depending on the inputs its been given
 @app.callback(
     Output('selected-chart', 'figure'),
     Input('chart-dropdown', 'value'),
@@ -236,10 +238,12 @@ def plotChart(chart_type, year, visualization_type, selected_data):
                 font=dict(color="White"),
                 margin=dict(t=75, r=50, b=50, l=75),
             ),
-        )
+        ) # Return a blank graph if not in agg mode or nothing is selected.
 
     dff = pd.DataFrame([selected_data["points"][i]['customdata'] for i in range(len(selected_data["points"]))],
                         columns = ['Region', 'Log crime rate', 'Crime rate'])
+    # Make a dataframe from the selected data on the map after its been lassoed
+
     if chart_type == 'Crime rate by region (Single Year)':
         fig = px.bar(dff, x='Region', y='Crime rate', title='Crime rate by region (Single Year)')
         fig.update_layout(paper_bgcolor='#191a1a',
@@ -260,12 +264,7 @@ def plotChart(chart_type, year, visualization_type, selected_data):
 
     return fig
 
-
-    paper_bgcolor='#191a1a',
-    plot_bgcolor='#191a1a',
-    autofill=True,
-    margin=dict(t=75, r=50, b=50, l=50)
-
+# This next callback changes the format of the app based on which mode it's in
 @app.callback(
     Output('month-slider-div', 'style'),
     Output('highlight', 'style'),
@@ -275,6 +274,7 @@ def plotChart(chart_type, year, visualization_type, selected_data):
 )
 def changeVisualizationType(current_type):
     if current_type=="ind":
+        # Show month slider and highlight checkbox. Hide boundaries radioitems. Change height of map
         return [
             dict(),
             dict(),
@@ -282,6 +282,7 @@ def changeVisualizationType(current_type):
             dict(height='817px')
             ]
     elif current_type=="agg":
+        # Hide month slider and highlight checkbox. Show boundaries radioitems. Change height of map
         return [
             dict(display='none'),
             dict(display='none'),
@@ -289,6 +290,7 @@ def changeVisualizationType(current_type):
             dict(height='778px')
             ]
 
+# This callback gives functionality to the select all button above the crime type dropdown
 @app.callback(
     Output('crime-dropdown', 'value'),
     Input('select-all', 'value'),
@@ -300,6 +302,7 @@ def checkSelected(selected, current_values):
     else:
         return current_values
 
+# This callback plots the map
 @app.callback(
     Output('map', 'figure'),
     Input('visualization-type-radio-items', 'value'),
@@ -323,7 +326,7 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight,
             alpha = 0.3
 
         if postal:
-            coords = getPostalCoords(postal)
+            coords = get_postal_coords(postal)
             center = dict(lat = coords['latitude'].item(), lon = coords['longitude'].item())
             fig = px.scatter_mapbox(dff,
                                     lat="Latitude",
@@ -372,7 +375,7 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight,
     elif current_type == "agg":
 
         # Crude fix for an annoying problem that arises if isin() isn't passed a list
-        crime_list = toList(crime_types)
+        crime_list = convert_to_list(crime_types)
         dff = df_street_agg[(df_street_agg['Year']==year) & df_street_agg['Crime'].isin(crime_list)]
 
         if boundaries == 'LSOA':
@@ -383,7 +386,7 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight,
             dff['Number of crimes (actual)'] = dff['n']
 
             if postal:
-                coords = getPostalCoords(postal)
+                coords = get_postal_coords(postal)
                 center = dict(lat = coords['latitude'].item(), lon = coords['longitude'].item())
                 fig = px.choropleth_mapbox(dff,
                                            geojson=lsoa,
@@ -465,7 +468,7 @@ def updateMap(current_type, n_clicks, year, month, crime_types, highlight,
             dff['Log crime rate'] = dff['Crimes per 1000 people'].apply(lambda x: round(math.log(x), 2))
 
             if postal:
-                coords = getPostalCoords(postal)
+                coords = get_postal_coords(postal)
                 center = dict(lat = coords['latitude'].item(), lon = coords['longitude'].item())
                 fig = px.choropleth_mapbox(dff,
                                            geojson=lad,
